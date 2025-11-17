@@ -1,34 +1,26 @@
 """
-F1 Pit Stop Prediction - Data Collection Pipeline
-This script pulls clean F1 data from FastF1 API and combines it into a single dataset
-for machine learning model training to predict pit stops within the next k laps.
-
-Target Features:
-- Lap, TireAge, Compound, TrackTemp, AirTemp, WindDirection
-- GapAhead, GapBehind, SafetyCar, PitNext3Laps, Rainfall, Humidity
+F1 Clean Race Data Extractor
+Script to pull race lap data from FastF1 API with needed features
+No preprocessing - just raw, clean data
 """
 
 import fastf1
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import warnings
 import os
+import warnings
 warnings.filterwarnings('ignore')
 
-# Create cache directory if it doesn't exist
+# Setup cache
 cache_dir = 'fastf1_cache'
 if not os.path.exists(cache_dir):
     os.makedirs(cache_dir)
-    print(f"Created cache directory: {cache_dir}")
-
-# Enable caching to speed up data retrieval
 fastf1.Cache.enable_cache(cache_dir)
 
 
-def calculate_gaps(laps_df, session_laps):
+def calculate_gaps(laps_df):
     """
-    Calculate GapAhead and GapBehind for each driver on each lap
+    Calculate time gap to car ahead and behind based on lap times and positions
     """
     gaps_data = []
     
@@ -37,20 +29,19 @@ def calculate_gaps(laps_df, session_laps):
         lap_data = lap_data.sort_values('Position')
         
         for idx, row in lap_data.iterrows():
-            gap_ahead = np.nan
-            gap_behind = np.nan
+            gap_ahead = None
+            gap_behind = None
             
-            # Get position of current driver
             pos = row['Position']
             
+            # Gap to car ahead
             if pd.notna(pos) and pos > 1:
-                # Find driver ahead
                 ahead = lap_data[lap_data['Position'] == pos - 1]
                 if not ahead.empty and pd.notna(row['LapTime']) and pd.notna(ahead.iloc[0]['LapTime']):
                     gap_ahead = (row['LapTime'] - ahead.iloc[0]['LapTime']).total_seconds()
             
+            # Gap to car behind
             if pd.notna(pos):
-                # Find driver behind
                 behind = lap_data[lap_data['Position'] == pos + 1]
                 if not behind.empty and pd.notna(row['LapTime']) and pd.notna(behind.iloc[0]['LapTime']):
                     gap_behind = (behind.iloc[0]['LapTime'] - row['LapTime']).total_seconds()
@@ -65,231 +56,197 @@ def calculate_gaps(laps_df, session_laps):
     return pd.DataFrame(gaps_data)
 
 
-def create_pit_labels(laps_df, k=3):
+def get_race_laps(year, round_num):
     """
-    Create target variable: PitNextKLaps
-    Returns 1 if driver pits within next k laps, 0 otherwise
-    """
-    laps_df = laps_df.sort_values(['Driver', 'LapNumber']).copy()
-    laps_df[f'PitNext{k}Laps'] = 0
-    
-    for driver in laps_df['Driver'].unique():
-        driver_laps = laps_df[laps_df['Driver'] == driver].copy()
-        pit_laps = driver_laps[driver_laps['PitInTime'].notna()]['LapNumber'].values
-        
-        for pit_lap in pit_laps:
-            # Mark k laps before pit as positive examples
-            mask = (
-                (laps_df['Driver'] == driver) & 
-                (laps_df['LapNumber'] >= pit_lap - k) & 
-                (laps_df['LapNumber'] < pit_lap)
-            )
-            laps_df.loc[mask, f'PitNext{k}Laps'] = 1
-    
-    return laps_df
-
-
-def get_session_data(year, round_num, session_name='R'):
-    """
-    Retrieve and process data for a single session
+    Pull clean race lap data for a single race
     
     Parameters:
-    - year: int, season year
-    - round_num: int, round number in the season
-    - session_name: str, 'R' for race, 'Q' for qualifying, 'FP1', 'FP2', 'FP3' for practice
+    -----------
+    year : int
+        Season year (e.g., 2023)
+    round_num : int
+        Round number in the season (e.g., 1 for first race)
+    
+    Returns:
+    --------
+    DataFrame with columns:
+        - Year, Round, EventName, Driver, DriverNumber, Team
+        - LapNumber, LapTime, Position
+        - TireAge, Compound, Stint
+        - TrackTemp, AirTemp, Humidity, Pressure, WindDirection, WindSpeed, Rainfall
+        - GapAhead, GapBehind
+        - SafetyCar (0 or 1)
+        - PitInTime, PitOutTime (for creating labels later)
     """
-    print(f"\nLoading {year} Round {round_num} - {session_name}...")
+    print(f"Fetching {year} Round {round_num}...")
     
-    # Load session
-    session = fastf1.get_session(year, round_num, session_name)
-    session.load()
-    
-    # Get laps data
-    laps = session.laps
-    
-    # Select relevant columns and rename for clarity
-    laps_df = laps[[
-        'Driver', 'DriverNumber', 'LapNumber', 'LapTime', 'Position',
-        'Compound', 'TyreLife', 'PitInTime', 'PitOutTime',
-        'Stint', 'Team', 'IsPersonalBest'
-    ]].copy()
-    
-    # Rename TyreLife to TireAge for consistency
-    laps_df.rename(columns={'TyreLife': 'TireAge'}, inplace=True)
-    
-    # Get weather data for each lap
-    weather_data = laps.get_weather_data()
-    weather_df = weather_data[[
-        'AirTemp', 'TrackTemp', 'Humidity', 'Pressure',
-        'WindDirection', 'WindSpeed', 'Rainfall'
-    ]].copy()
-    
-    # Reset index to merge properly
-    weather_df['LapIndex'] = weather_df.index
-    laps_df['LapIndex'] = laps_df.index
-    
-    # Merge lap data with weather data
-    merged_df = pd.merge(laps_df, weather_df, on='LapIndex', how='left')
-    
-    # Calculate gaps
-    gaps_df = calculate_gaps(merged_df, laps)
-    
-    # Merge gaps into main dataframe
-    merged_df = pd.merge(
-        merged_df, 
-        gaps_df, 
-        on=['Driver', 'LapNumber'], 
-        how='left'
-    )
-    
-    # Add track status for safety car information
-    # FastF1 provides TrackStatus where '4' typically indicates Safety Car
     try:
-        # Get track status from session
-        track_status = session.track_status
-        if track_status is not None and len(track_status) > 0:
-            # Create a SafetyCar column based on track status
-            merged_df['SafetyCar'] = 0
-            
-            # You may need to adjust this based on actual track status codes
-            # Common codes: '1' = Green, '2' = Yellow, '4' = Safety Car, '6' = VSC
-            for idx, row in merged_df.iterrows():
-                lap_start = row['LapNumber']
-                # This is simplified - you'd need to match times properly
-                merged_df.loc[idx, 'SafetyCar'] = 0  # Default to no SC
-        else:
-            merged_df['SafetyCar'] = 0
-    except:
-        merged_df['SafetyCar'] = 0
-    
-    # Create pit stop labels (default k=3)
-    merged_df = create_pit_labels(merged_df, k=3)
-    
-    # Add session metadata
-    merged_df['Year'] = year
-    merged_df['Round'] = round_num
-    merged_df['Session'] = session_name
-    merged_df['EventName'] = session.event['EventName']
-    
-    # Select final columns in desired order
-    final_columns = [
-        'Year', 'Round', 'EventName', 'Session',
-        'Driver', 'DriverNumber', 'Team',
-        'LapNumber', 'LapTime', 'Position',
-        'TireAge', 'Compound', 'Stint',
-        'TrackTemp', 'AirTemp', 'Humidity', 'Pressure',
-        'WindDirection', 'WindSpeed', 'Rainfall',
-        'GapAhead', 'GapBehind',
-        'SafetyCar',
-        'PitNext3Laps',
-        'PitInTime', 'PitOutTime'
-    ]
-    
-    result_df = merged_df[final_columns].copy()
-    
-    print(f"✓ Collected {len(result_df)} lap records")
-    
-    return result_df
+        # Load race session
+        session = fastf1.get_session(year, round_num, 'R')
+        session.load()
+        
+        event_name = session.event['EventName']
+        print(f"  → {event_name}")
+        
+        # Get all laps
+        laps = session.laps
+        
+        # Extract basic lap data
+        lap_data = pd.DataFrame({
+            'Year': year,
+            'Round': round_num,
+            'EventName': event_name,
+            'Driver': laps['Driver'],
+            'DriverNumber': laps['DriverNumber'],
+            'Team': laps['Team'],
+            'LapNumber': laps['LapNumber'],
+            'LapTime': laps['LapTime'],
+            'Position': laps['Position'],
+            'TireAge': laps['TyreLife'],
+            'Compound': laps['Compound'],
+            'Stint': laps['Stint'],
+            'PitInTime': laps['PitInTime'],
+            'PitOutTime': laps['PitOutTime']
+        })
+        
+        # Get weather data per lap
+        weather = laps.get_weather_data()
+        weather_data = pd.DataFrame({
+            'TrackTemp': weather['TrackTemp'],
+            'AirTemp': weather['AirTemp'],
+            'Humidity': weather['Humidity'],
+            'Pressure': weather['Pressure'],
+            'WindDirection': weather['WindDirection'],
+            'WindSpeed': weather['WindSpeed'],
+            'Rainfall': weather['Rainfall']
+        })
+        
+        # Merge lap data with weather
+        lap_data = lap_data.reset_index(drop=True)
+        weather_data = weather_data.reset_index(drop=True)
+        merged_data = pd.concat([lap_data, weather_data], axis=1)
+        
+        # Calculate gaps between cars
+        gaps = calculate_gaps(merged_data)
+        merged_data = pd.merge(
+            merged_data,
+            gaps,
+            on=['Driver', 'LapNumber'],
+            how='left'
+        )
+        
+        # Add SafetyCar flag (simplified - can be enhanced)
+        merged_data['SafetyCar'] = 0
+        
+        # Sort by lap number and driver
+        merged_data = merged_data.sort_values(['LapNumber', 'Driver']).reset_index(drop=True)
+        
+        print(f"  ✓ {len(merged_data)} laps collected\n")
+        
+        return merged_data
+        
+    except Exception as e:
+        print(f"  ✗ Error: {str(e)}\n")
+        return None
 
 
-def collect_season_data(year, rounds_list, session_name='R'):
+def collect_multiple_races(year, rounds):
     """
-    Collect data for multiple rounds in a season
+    Collect data from multiple races
     
     Parameters:
-    - year: int, season year
-    - rounds_list: list of ints, round numbers to collect
-    - session_name: str, session type
+    -----------
+    year : int
+        Season year
+    rounds : list of int
+        List of round numbers to collect
+    
+    Returns:
+    --------
+    DataFrame with all race laps combined
     """
-    all_data = []
+    all_races = []
     
-    for round_num in rounds_list:
-        try:
-            session_data = get_session_data(year, round_num, session_name)
-            all_data.append(session_data)
-        except Exception as e:
-            print(f"✗ Error loading Round {round_num}: {str(e)}")
-            continue
+    print(f"\n{'='*60}")
+    print(f"Collecting F1 Race Data: {year} Season")
+    print(f"{'='*60}\n")
     
-    if all_data:
-        combined_df = pd.concat(all_data, ignore_index=True)
-        print(f"\n{'='*60}")
-        print(f"Total records collected: {len(combined_df)}")
-        print(f"Total races: {len(rounds_list)}")
-        print(f"Date range: {year}")
-        print(f"{'='*60}\n")
-        return combined_df
-    else:
-        return pd.DataFrame()
+    for round_num in rounds:
+        race_data = get_race_laps(year, round_num)
+        if race_data is not None:
+            all_races.append(race_data)
+    
+    if not all_races:
+        print("No data collected!")
+        return None
+    
+    # Combine all races
+    combined = pd.concat(all_races, ignore_index=True)
+    
+    # Summary
+    print(f"{'='*60}")
+    print(f"Collection Complete!")
+    print(f"{'='*60}")
+    print(f"Total laps:    {len(combined):,}")
+    print(f"Races:         {combined['Round'].nunique()}")
+    print(f"Drivers:       {combined['Driver'].nunique()}")
+    print(f"Teams:         {combined['Team'].nunique()}")
+    print(f"{'='*60}\n")
+    
+    return combined
 
 
-def clean_and_export(df, filename='f1_pitstop_data.csv'):
+def save_data(df, filename='f1_race_data.csv'):
     """
-    Clean the dataset and export to CSV
+    Save data to CSV with summary info
     """
-    # Remove laps with missing critical features
-    print("Cleaning data...")
-    initial_rows = len(df)
+    if df is None:
+        print("No data to save!")
+        return
     
-    # Remove outliers and invalid data
-    df_clean = df.copy()
+    # Save to CSV
+    df.to_csv(filename, index=False)
+    print(f"✓ Data saved to: {filename}")
     
-    # Remove laps with missing tire data
-    df_clean = df_clean[df_clean['TireAge'].notna()]
+    # Print column info
+    print(f"\nColumns ({len(df.columns)}):")
+    for col in df.columns:
+        non_null = df[col].notna().sum()
+        print(f"  - {col:20s} ({non_null:,} non-null values)")
     
-    # Remove laps with extreme values (likely errors)
-    df_clean = df_clean[df_clean['TireAge'] < 100]  # Tires don't last 100 laps
+    # Show sample
+    print(f"\nFirst few rows:")
+    print(df.head())
     
-    # Convert LapTime to seconds for easier processing
-    df_clean['LapTimeSeconds'] = df_clean['LapTime'].dt.total_seconds()
-    
-    # Handle missing values in weather data (forward fill within each race)
-    weather_cols = ['TrackTemp', 'AirTemp', 'Humidity', 'WindDirection', 'Rainfall']
-    for col in weather_cols:
-        df_clean[col] = df_clean.groupby(['Year', 'Round'])[col].ffill()
-    
-    final_rows = len(df_clean)
-    print(f"Removed {initial_rows - final_rows} rows with missing/invalid data")
-    print(f"Final dataset: {final_rows} rows")
-    
-    # Export to CSV
-    df_clean.to_csv(filename, index=False)
-    print(f"\n✓ Data exported to {filename}")
-    
-    # Print summary statistics
-    print("\nDataset Summary:")
-    print(f"Total laps: {len(df_clean)}")
-    print(f"Unique drivers: {df_clean['Driver'].nunique()}")
-    print(f"Pit stops (PitNext3Laps=1): {df_clean['PitNext3Laps'].sum()}")
-    print(f"Class balance: {df_clean['PitNext3Laps'].value_counts(normalize=True)}")
-    
-    return df_clean
+    return df
 
 
-# Example usage
+
+# USAGE 
+
 if __name__ == "__main__":
-    # Collect data for 2023 season, rounds 1-5 (adjust as needed)
-    # For full season, use: rounds_list = list(range(1, 23))
     
-    print("F1 Pit Stop Prediction - Data Collection")
-    print("=" * 60)
+    # race_data = get_race_laps(year=2023, round_num=1)
+    # save_data(race_data, 'bahrain_2023.csv')
     
-    # Example: Collect race data from 2023, rounds 1-3
-    data = collect_season_data(
-        year=2023,
-        rounds_list=[1, 2, 3],  # Start with a few races for testing
-        session_name='R'  # 'R' for race
+    # First two races from 2024 
+    data = collect_multiple_races(
+        year=2024,
+        rounds=[1, 2]  # First 3 races of 2023
     )
+    save_data(data, 'f1_race_data_2024.csv')
     
-    # Clean and export
-    if not data.empty:
-        clean_data = clean_and_export(data, 'f1_pitstop_training_data.csv')
-        
-        # Display sample
-        print("\nSample of collected data:")
-        print(clean_data.head(10))
-        
-        print("\nFeature columns available:")
-        print(clean_data.columns.tolist())
-    else:
-        print("No data collected. Check your internet connection and try again.")
+    # Full season
+    # data = collect_multiple_races(
+    #     year=2024,
+    #     rounds=list(range(1, 23))  # All 22 races
+    # )
+    # save_data(data, 'f1_race_data_2024_full.csv')
+    
+    # Combined season 2022-24 
+    # all_data = []
+    # for year in [2022, 2023, 2024]:
+    #     season_data = collect_multiple_races(year, list(range(1, 23)))
+    #     if season_data is not None:
+    #         all_data.append(season_data)
+    # combined = pd.concat(all_data, ignore_index=True)
