@@ -209,7 +209,6 @@ def collect_multiple_races(year, rounds, clean=True):
     Collect data from multiple races
     
     Parameters:
-    -----------
     year : int
         Season year
     rounds : list of int
@@ -217,9 +216,7 @@ def collect_multiple_races(year, rounds, clean=True):
     clean : bool
         If True, apply data cleaning for ML training
     
-    Returns:
-    --------
-    DataFrame with all race laps combined
+    Returns: DataFrame with all race laps combined
     """
     all_races = []
     
@@ -320,15 +317,16 @@ def save_data(df, filename='f1_race_data.csv'):
     
     print(f"{'='*60}\n")
     
-    # Show sample
-    print("Sample of cleaned data:")
+    # show sample
+    print("test sample of cleaned data:")
     print(df_final[['Driver', 'LapNumber', 'Position', 'TireAge', 'Compound', 
-                     'LapTimeSeconds', 'GapAhead', 'PitThisLap']].head(10))
+                     'LapTimeSeconds', 'GapAhead', 'PitThisLap']].head(5))
     
     return df_final
 
-# USAGE
 
+
+# USAGE
 if __name__ == "__main__":
     # to get single race data 
     # race_data = get_race_laps(year=2024, round_num=1)
