@@ -20,3 +20,59 @@ Research Question: Can supervised ML models trained on historical F1 data predic
 6. **Outputs CSV** with 22 clean columns, sorted and ready for ML training
 
 **Output:** A single CSV file with all race laps, features, and pit stop labels so that we do not need preprocessing needed. We can just train on top of it. 
+
+## Summary of `train.ipynb`
+
+**Purpose**: we build and evaluate supervised models (logistic regression and LSTM) to predict whether a driver will pit on a given lap using the cleaned race-lap dataset.
+
+**What we did**:
+
+1. **Prepared model inputs**
+
+   a. Loaded the cleaned CSV output from data.py
+
+   b. Split data by driver into train, validation, and test sets
+
+   c. Standardized numeric features using a scaler fit on the training set
+
+   d. Formed race-long sequences (driver by race) for the LSTM model
+
+2. **Trained Logistic Regression (baseline)**
+
+   a. Uses only per-lap features (no sequence structure)
+
+   b. Fast to train and easy to interpret
+
+   c. strong performance:
+
+      - ROC-AUC: ~0.92
+
+      - PR-AUC: ~0.23
+
+3. Built and trained LSTM sequence model
+
+   a. Implemented custom PyTorch Dataset and collate_fn
+
+   b. Padded sequences and created masks for real lap entries
+
+   c. Used pack_padded_sequence to handle variable sequence lengths
+
+   d. Output a probability for each lap in the sequence
+
+   e. After debugging masking and shape mismatches, the LSTM trained correctly
+
+4. Final performance:
+
+   - ROC-AUC: ~0.58
+
+   - PR-AUC: ~0.04
+
+We evaluated both models and found that logistic regression clearly outperformed the LSTM model
+
+For this dataset, most pit-stop signal is already captured by static lap-level features (tire age, lap-time drop, compound, gaps). The LSTM does not gain additional predictive power from full race sequences, likely due to the rarity of pit laps, noisy lap-to-lap patterns, and missing team strategy context.
+
+**Second step ideas**:
+
+- expand dataset with more races
+
+- Try GRUs, temporal CNNs, or attention models
