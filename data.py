@@ -334,20 +334,20 @@ if __name__ == "__main__":
     # save_data(race_data, 'bahrain_2024_clean.csv')
     
     # we used the first two races data from 2024 for milestone 1
-    data = collect_multiple_races(
-        year=2024,
-        rounds=[1, 2],
-        clean=True  # Set to False if you want raw data
-    )
-    save_data(data, 'f1_race_data_2024_clean.csv')
+    # data = collect_multiple_races(
+     #   year=2024,
+    #    rounds=[1, 2],
+     #   clean=True  # Set to False if you want raw data
+    #)
+    #save_data(data, 'f1_race_data_2024_clean.csv')
     
     # Full season 2024
-    # data = collect_multiple_races(
-    #     year=2024,
-    #     rounds=list(range(1, 25)),  # 2024 has 24 races
-    #     clean=True
-    # )
-    # save_data(data, 'f1_race_data_2024_full_clean.csv')
+    data = collect_multiple_races(
+        year=2024,
+        rounds=list(range(1, 25)),  # 2024 has 24 races
+        clean=True
+     )
+    save_data(data, 'f1_race_data_2024_full_clean.csv')
     
     # Combined seasons 2022-2024 
     # all_data = []
