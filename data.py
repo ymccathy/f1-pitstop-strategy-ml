@@ -326,6 +326,116 @@ def save_data(df, filename='f1_race_data.csv'):
 
 
 
+def get_season_rounds(year):
+    """
+    Get the number of rounds for a given season.
+    Uses FastF1 to automatically detect available races.
+    
+    Parameters:
+    -----------
+    year : int
+        Season year
+    
+    Returns:
+    --------
+    list of int : Available round numbers for that season
+    """
+    try:
+        # Get the season schedule
+        schedule = fastf1.get_event_schedule(year)
+        
+        # Filter for race events only (exclude testing)
+        races = schedule[schedule['EventFormat'] != 'testing']
+        
+        # Get round numbers
+        rounds = races['RoundNumber'].dropna().astype(int).tolist()
+        
+        print(f"  → {year}: {len(rounds)} races detected")
+        return rounds
+        
+    except Exception as e:
+        print(f"    Error getting schedule for {year}: {str(e)}")
+        return []
+
+
+def collect_multi_season_data(years, clean=True, max_rounds_2025=23):
+    """
+    Collect data from multiple seasons automatically
+    
+    Parameters:
+    -----------
+    years : list of int
+        List of years to collect (e.g., [2014, 2015, 2016])
+    clean : bool
+        If True, apply data cleaning
+    max_rounds_2025 : int
+        For 2025, limit to this many rounds (default 23 for Qatar)
+    
+    Returns:
+    --------
+    DataFrame with all seasons combined
+    """
+    all_seasons = []
+    
+    print(f"\n{'='*60}")
+    print(f"Collecting F1 Data: {min(years)}-{max(years)}")
+    print(f"{'='*60}\n")
+    print("Detecting race schedules...")
+    
+    for year in years:
+        rounds = get_season_rounds(year)
+        
+        if not rounds:
+            print(f"  ✗ No races found for {year}, skipping...\n")
+            continue
+    
+        # For 2025, limit to completed races only
+        if year == 2025:
+            rounds = [r for r in rounds if r <= max_rounds_2025]
+            print(f"  → 2025: Limited to {len(rounds)} completed races (through Qatar)\n")
+        
+        # Collect data for this season
+        season_data = collect_multiple_races(
+            year=year,
+            rounds=rounds,
+            clean=clean
+        )
+
+        
+        if season_data is not None:
+            all_seasons.append(season_data)
+    
+    if not all_seasons:
+        print("No data collected!")
+        return None
+    
+    combined = pd.concat(all_seasons, ignore_index=True)
+    
+    combined = combined.sort_values(
+        ['Year', 'Round', 'Driver', 'LapNumber']
+    ).reset_index(drop=True)
+    
+    print(f"MULTI-SEASON COLLECTION COMPLETE!")
+    print(f"Seasons:       {min(years)}-{max(years)}")
+    print(f"Total laps:    {len(combined):,}")
+    print(f"Total races:   {combined.groupby(['Year', 'Round']).ngroups}")
+    print(f"Drivers:       {combined['Driver'].nunique()}")
+    print(f"Teams:         {combined['Team'].nunique()}")
+    print(f"Pit stops:     {combined['PitThisLap'].sum():,}")
+    print(f"Pit stop rate: {combined['PitThisLap'].mean()*100:.2f}%")
+    
+    # Per-year breakdown
+    print(f"\nBreakdown by year:")
+    for year in sorted(combined['Year'].unique()):
+        year_data = combined[combined['Year'] == year]
+        print(f"  {year}: {len(year_data):,} laps, "
+              f"{year_data['Round'].nunique()} races, "
+              f"{year_data['PitThisLap'].sum()} pit stops")
+
+    
+    return combined
+
+
 # USAGE
 if __name__ == "__main__":
     # to get single race data 
@@ -342,12 +452,20 @@ if __name__ == "__main__":
     #save_data(data, 'f1_race_data_2024_clean.csv')
     
     # Full season 2024
-    data = collect_multiple_races(
-        year=2024,
-        rounds=list(range(1, 25)),  # 2024 has 24 races
-        clean=True
-     )
-    save_data(data, 'f1_race_data_2024_full_clean.csv')
+    # data = collect_multiple_races(year=2024, rounds=list(range(1, 25)), clean=True)
+    
+    data = collect_multi_season_data(
+    years=[2022, 2023, 2024, 2025],
+    clean=True,
+    max_rounds_2025=23
+    )
+    
+    #data = collect_multi_season_data(
+    #    years=list(range(2014, 2026)),  # 2014 through 2025
+    #    clean=True,
+    #    max_rounds_2025=23  # Qatar is round 23 (Abu Dhabi round 24 hasn't happened yet)
+    #)
+    save_data(data, 'f1_race_data_2022_2025_clean.csv')
     
     # Combined seasons 2022-2024 
     # all_data = []
