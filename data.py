@@ -12,10 +12,12 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
+
 cache_dir = 'fastf1_cache'
 if not os.path.exists(cache_dir):
     os.makedirs(cache_dir)
 fastf1.Cache.enable_cache(cache_dir)
+
 
 def calculate_gaps(laps_df):
     """
@@ -55,15 +57,17 @@ def calculate_gaps(laps_df):
     return pd.DataFrame(gaps_data)
 
 
-def get_race_laps(year, round_num):
+def get_race_laps(year, round_num, retry=3):
     """
-    Pull clean race lap data for a single race
+    Pull clean race lap data for a single race with retry logic
     
     parameters:
     year : int
         Season year (e.g., 2023)
     round_num : int
         Round number in the season (e.g., 1 for first race)
+    retry : int
+        Number of retry attempts if download fails
     
     returns:
     DataFrame with columns:
@@ -75,82 +79,87 @@ def get_race_laps(year, round_num):
         - SafetyCar (0 or 1) 
         - PitThisLap (label: 1 if pit on this lap, 0 otherwise)
     """
-    print(f"Fetching {year} Round {round_num}...")
+    print(f"Fetching {year} Round {round_num}...", end=' ')
     
-    try:
-        # Load race session
-        session = fastf1.get_session(year, round_num, 'R')
-        session.load()
-        
-        event_name = session.event['EventName']
-        print(f"  → {event_name}")
-        
-        laps = session.laps
-        
-        # extratc basic lap data
-        lap_data = pd.DataFrame({
-            'Year': year,
-            'Round': round_num,
-            'EventName': event_name,
-            'Driver': laps['Driver'],
-            'DriverNumber': laps['DriverNumber'],
-            'Team': laps['Team'],
-            'LapNumber': laps['LapNumber'],
-            'LapTime': laps['LapTime'],
-            'Position': laps['Position'],
-            'TireAge': laps['TyreLife'],
-            'Compound': laps['Compound'],
-            'Stint': laps['Stint'],
-            'PitInTime': laps['PitInTime'],
-            'PitOutTime': laps['PitOutTime']
-        })
-        
-        # it convert LapTime to seconds (for training --> important in ML)
-        lap_data['LapTimeSeconds'] = lap_data['LapTime'].dt.total_seconds()
-        
-        # it creates PitThisLap label (1 if driver pits on this lap, 0 otherwise)
-        lap_data['PitThisLap'] = lap_data['PitInTime'].notna().astype(int)
-        
-        # get weather data per lap
-        weather = laps.get_weather_data()
-        weather_data = pd.DataFrame({
-            'TrackTemp': weather['TrackTemp'],
-            'AirTemp': weather['AirTemp'],
-            'Humidity': weather['Humidity'],
-            'Pressure': weather['Pressure'],
-            'WindDirection': weather['WindDirection'],
-            'WindSpeed': weather['WindSpeed'],
-            'Rainfall': weather['Rainfall']
-        })
-        
-        # merge lap data with weather
-        lap_data = lap_data.reset_index(drop=True)
-        weather_data = weather_data.reset_index(drop=True)
-        merged_data = pd.concat([lap_data, weather_data], axis=1)
-        
-        # calculate gaps between cars
-        gaps = calculate_gaps(merged_data)
-        merged_data = pd.merge(
-            merged_data,
-            gaps,
-            on=['Driver', 'LapNumber'],
-            how='left'
-        )
-        
-        # add SafetyCar flag (simplified ?
-        merged_data['SafetyCar'] = 0
-        
-        # Sort by lap number and driver (CRITICAL for time series)
-        merged_data = merged_data.sort_values(['LapNumber', 'Driver']).reset_index(drop=True)
-        
-        print(f"  ✓ {len(merged_data)} laps collected")
-        
-        return merged_data
-        
-    except Exception as e:
-        print(f"  ✗ Error: {str(e)}\n")
-        return None
-
+    for attempt in range(retry):
+        try:
+            # Load race session
+            session = fastf1.get_session(year, round_num, 'R')
+            session.load()
+            
+            event_name = session.event['EventName']
+            print(f"→ {event_name}")
+            
+            laps = session.laps
+            
+            # extract basic lap data
+            lap_data = pd.DataFrame({
+                'Year': year,
+                'Round': round_num,
+                'EventName': event_name,
+                'Driver': laps['Driver'],
+                'DriverNumber': laps['DriverNumber'],
+                'Team': laps['Team'],
+                'LapNumber': laps['LapNumber'],
+                'LapTime': laps['LapTime'],
+                'Position': laps['Position'],
+                'TireAge': laps['TyreLife'],
+                'Compound': laps['Compound'],
+                'Stint': laps['Stint'],
+                'PitInTime': laps['PitInTime'],
+                'PitOutTime': laps['PitOutTime']
+            })
+            
+            # convert LapTime to seconds
+            lap_data['LapTimeSeconds'] = lap_data['LapTime'].dt.total_seconds()
+            
+            # create PitThisLap label
+            lap_data['PitThisLap'] = lap_data['PitInTime'].notna().astype(int)
+            
+            # get weather data per lap
+            weather = laps.get_weather_data()
+            weather_data = pd.DataFrame({
+                'TrackTemp': weather['TrackTemp'],
+                'AirTemp': weather['AirTemp'],
+                'Humidity': weather['Humidity'],
+                'Pressure': weather['Pressure'],
+                'WindDirection': weather['WindDirection'],
+                'WindSpeed': weather['WindSpeed'],
+                'Rainfall': weather['Rainfall']
+            })
+            
+            # merge lap data with weather
+            lap_data = lap_data.reset_index(drop=True)
+            weather_data = weather_data.reset_index(drop=True)
+            merged_data = pd.concat([lap_data, weather_data], axis=1)
+            
+            # calculate gaps between cars
+            gaps = calculate_gaps(merged_data)
+            merged_data = pd.merge(
+                merged_data,
+                gaps,
+                on=['Driver', 'LapNumber'],
+                how='left'
+            )
+            
+            # add SafetyCar flag
+            merged_data['SafetyCar'] = 0
+            
+            # Sort by lap number and driver
+            merged_data = merged_data.sort_values(['LapNumber', 'Driver']).reset_index(drop=True)
+            
+            print(f"  ✓ {len(merged_data)} laps collected")
+            
+            return merged_data
+            
+        except Exception as e:
+            if attempt < retry - 1:
+                print(f"  ⚠ Attempt {attempt + 1} failed, retrying...")
+                import time
+                time.sleep(5)  # Wait 5 seconds before retry
+            else:
+                print(f"  ✗ Error after {retry} attempts: {str(e)}")
+                return None
 
 
 def clean_race_data(df):
@@ -204,69 +213,66 @@ def clean_race_data(df):
     return df_clean
 
 
-def collect_multiple_races(year, rounds, clean=True):
+def collect_single_year(year, num_races):
     """
-    Collect data from multiple races
+    Collect all races for a single year
     
     Parameters:
+    -----------
     year : int
-        Season year
-    rounds : list of int
-        List of round numbers to collect
-    clean : bool
-        If True, apply data cleaning for ML training
+        Season year (e.g., 2023)
+    num_races : int
+        Number of races in that season
     
-    Returns: DataFrame with all race laps combined
+    Returns:
+    --------
+    DataFrame with all races from that year
     """
-    all_races = []
+    print(f"\n{'='*70}")
+    print(f"  Collecting {year} Season - {num_races} Races")
+    print(f"{'='*70}\n")
     
-    print(f"\n{'='*60}")
-    print(f"Collecting F1 Race Data: {year} Season")
-    print(f"{'='*60}\n")
+    year_data = []
+    failed_races = []
     
-    for round_num in rounds:
-        race_data = get_race_laps(year, round_num)
+    for round_num in range(1, num_races + 1):
+        race_data = get_race_laps(year, round_num, retry=3)
+        
         if race_data is not None:
-            if clean:
-                race_data = clean_race_data(race_data)
-            all_races.append(race_data)
+            race_data = clean_race_data(race_data)
+            year_data.append(race_data)
+        else:
+            failed_races.append(round_num)
     
-    if not all_races:
-        print("No data collected!")
+    if not year_data:
+        print(f"\n✗ No data collected for {year}!")
         return None
     
     # Combine all races
-    combined = pd.concat(all_races, ignore_index=True)
-    
-    # Sort by Year, Round, Driver, LapNumber (CRITICAL for LSTM)
-    combined = combined.sort_values(
-        ['Year', 'Round', 'Driver', 'LapNumber']
-    ).reset_index(drop=True)
+    combined = pd.concat(year_data, ignore_index=True)
+    combined = combined.sort_values(['Round', 'Driver', 'LapNumber']).reset_index(drop=True)
     
     # Summary
-    print(f"\n{'='*60}")
-    print(f"Collection Complete!")
-    print(f"{'='*60}")
-    print(f"Total laps:    {len(combined):,}")
-    print(f"Races:         {combined['Round'].nunique()}")
-    print(f"Drivers:       {combined['Driver'].nunique()}")
-    print(f"Teams:         {combined['Team'].nunique()}")
-    print(f"Pit stops:     {combined['PitThisLap'].sum()}")
-    print(f"Pit stop rate: {combined['PitThisLap'].mean()*100:.2f}%")
-    print(f"{'='*60}\n")
+    print(f"\n{'='*70}")
+    print(f"  {year} Collection Summary")
+    print(f"{'='*70}")
+    print(f"  Races collected:  {len(year_data)} / {num_races}")
+    if failed_races:
+        print(f"  Failed races:     {failed_races}")
+    print(f"  Total laps:       {len(combined):,}")
+    print(f"  Drivers:          {combined['Driver'].nunique()}")
+    print(f"  Pit stops:        {combined['PitThisLap'].sum()}")
+    print(f"  Pit stop rate:    {combined['PitThisLap'].mean()*100:.2f}%")
+    print(f"{'='*70}\n")
     
     return combined
 
 
-def save_data(df, filename='f1_race_data.csv'):
-    """
-    Save clean data to CSV with summary info
-    """
+def save_year_data(df, year):
+    """Save single year data to CSV"""
     if df is None:
-        print("No data to save!")
         return
     
-    # Select final columns for ML (drop raw PitInTime/PitOutTime)
     final_cols = [
         'Year', 'Round', 'EventName', 'Driver', 'DriverNumber', 'Team',
         'LapNumber', 'LapTimeSeconds', 'Position',
@@ -277,206 +283,31 @@ def save_data(df, filename='f1_race_data.csv'):
         'PitThisLap'
     ]
     
-    df_final = df[final_cols].copy()
-    
-    # Save to CSV
-    df_final.to_csv(filename, index=False)
-    print(f"✓ Data saved to: {filename}")
-    
-    # Data quality report
-    print(f"\n{'='*60}")
-    print("Data Quality Report")
-    print(f"{'='*60}")
-    
-    # Check for missing values
-    missing = df_final.isnull().sum()
-    if missing.sum() > 0:
-        print("\nMissing values:")
-        for col in missing[missing > 0].index:
-            pct = missing[col] / len(df_final) * 100
-            print(f"  - {col:20s}: {missing[col]:,} ({pct:.1f}%)")
-    else:
-        print("\n✓ No missing values!")
-    
-    # Check data ranges
-    print("\nData ranges:")
-    print(f"  LapTimeSeconds:  {df_final['LapTimeSeconds'].min():.1f} - {df_final['LapTimeSeconds'].max():.1f}")
-    print(f"  TireAge:         {df_final['TireAge'].min():.0f} - {df_final['TireAge'].max():.0f}")
-    print(f"  Position:        {df_final['Position'].min():.0f} - {df_final['Position'].max():.0f}")
-    print(f"  TrackTemp:       {df_final['TrackTemp'].min():.1f}°C - {df_final['TrackTemp'].max():.1f}°C")
-    
-    # Class distribution
-    print("\nTarget variable (PitThisLap):")
-    print(f"  No pit (0):  {(df_final['PitThisLap']==0).sum():,} ({(df_final['PitThisLap']==0).mean()*100:.2f}%)")
-    print(f"  Pit (1):     {(df_final['PitThisLap']==1).sum():,} ({(df_final['PitThisLap']==1).mean()*100:.2f}%)")
-    
-    # Tire compounds
-    print("\nTire compounds:")
-    for compound, count in df_final['Compound'].value_counts().items():
-        print(f"  {compound}: {count:,}")
-    
-    print(f"{'='*60}\n")
-    
-    # show sample
-    print("test sample of cleaned data:")
-    print(df_final[['Driver', 'LapNumber', 'Position', 'TireAge', 'Compound', 
-                     'LapTimeSeconds', 'GapAhead', 'PitThisLap']].head(5))
-    
-    return df_final
+    filename = f'f1_data_{year}.csv'
+    df[final_cols].to_csv(filename, index=False)
+    print(f"✓ Saved to: {filename}\n")
 
 
+# ============================================================================
+# Collect one year at the time 
+# ============================================================================
 
-def get_season_rounds(year):
-    """
-    Get the number of rounds for a given season.
-    Uses FastF1 to automatically detect available races.
-    
-    Parameters:
-    -----------
-    year : int
-        Season year
-    
-    Returns:
-    --------
-    list of int : Available round numbers for that season
-    """
-    try:
-        # Get the season schedule
-        schedule = fastf1.get_event_schedule(year)
-        
-        # Filter for race events only (exclude testing)
-        races = schedule[schedule['EventFormat'] != 'testing']
-        
-        # Get round numbers
-        rounds = races['RoundNumber'].dropna().astype(int).tolist()
-        
-        print(f"  → {year}: {len(rounds)} races detected")
-        return rounds
-        
-    except Exception as e:
-        print(f"    Error getting schedule for {year}: {str(e)}")
-        return []
-
-
-def collect_multi_season_data(years, clean=True, max_rounds_2025=23):
-    """
-    Collect data from multiple seasons automatically
-    
-    Parameters:
-    -----------
-    years : list of int
-        List of years to collect (e.g., [2014, 2015, 2016])
-    clean : bool
-        If True, apply data cleaning
-    max_rounds_2025 : int
-        For 2025, limit to this many rounds (default 23 for Qatar)
-    
-    Returns:
-    --------
-    DataFrame with all seasons combined
-    """
-    all_seasons = []
-    
-    print(f"\n{'='*60}")
-    print(f"Collecting F1 Data: {min(years)}-{max(years)}")
-    print(f"{'='*60}\n")
-    print("Detecting race schedules...")
-    
-    for year in years:
-        rounds = get_season_rounds(year)
-        
-        if not rounds:
-            print(f"  ✗ No races found for {year}, skipping...\n")
-            continue
-    
-        # For 2025, limit to completed races only
-        if year == 2025:
-            rounds = [r for r in rounds if r <= max_rounds_2025]
-            print(f"  → 2025: Limited to {len(rounds)} completed races (through Qatar)\n")
-        
-        # Collect data for this season
-        season_data = collect_multiple_races(
-            year=year,
-            rounds=rounds,
-            clean=clean
-        )
-
-        
-        if season_data is not None:
-            all_seasons.append(season_data)
-    
-    if not all_seasons:
-        print("No data collected!")
-        return None
-    
-    combined = pd.concat(all_seasons, ignore_index=True)
-    
-    combined = combined.sort_values(
-        ['Year', 'Round', 'Driver', 'LapNumber']
-    ).reset_index(drop=True)
-    
-    print(f"MULTI-SEASON COLLECTION COMPLETE!")
-    print(f"Seasons:       {min(years)}-{max(years)}")
-    print(f"Total laps:    {len(combined):,}")
-    print(f"Total races:   {combined.groupby(['Year', 'Round']).ngroups}")
-    print(f"Drivers:       {combined['Driver'].nunique()}")
-    print(f"Teams:         {combined['Team'].nunique()}")
-    print(f"Pit stops:     {combined['PitThisLap'].sum():,}")
-    print(f"Pit stop rate: {combined['PitThisLap'].mean()*100:.2f}%")
-    
-    # Per-year breakdown
-    print(f"\nBreakdown by year:")
-    for year in sorted(combined['Year'].unique()):
-        year_data = combined[combined['Year'] == year]
-        print(f"  {year}: {len(year_data):,} laps, "
-              f"{year_data['Round'].nunique()} races, "
-              f"{year_data['PitThisLap'].sum()} pit stops")
-
-    
-    return combined
-
-
-# USAGE
 if __name__ == "__main__":
-    # to get single race data 
-    # race_data = get_race_laps(year=2024, round_num=1)
-    # race_data = clean_race_data(race_data)
-    # save_data(race_data, 'bahrain_2024_clean.csv')
     
-    # we used the first two races data from 2024 for milestone 1
-    # data = collect_multiple_races(
-     #   year=2024,
-    #    rounds=[1, 2],
-     #   clean=True  # Set to False if you want raw data
-    #)
-    #save_data(data, 'f1_race_data_2024_clean.csv')
+    # Change this to collect different years
+    # Uncomment the year you want to collect:
     
-    # Full season 2024
-    # data = collect_multiple_races(year=2024, rounds=list(range(1, 25)), clean=True)
+    #data = collect_single_year(2021, 22)
+    #save_year_data(data, 2021)
     
-    data = collect_multi_season_data(
-    years=[2022, 2023, 2024, 2025],
-    clean=True,
-    max_rounds_2025=23
-    )
+    #data = collect_single_year(2022, 22)
+    #save_year_data(data, 2022)
     
-    #data = collect_multi_season_data(
-    #    years=list(range(2014, 2026)),  # 2014 through 2025
-    #    clean=True,
-    #    max_rounds_2025=23  # Qatar is round 23 (Abu Dhabi round 24 hasn't happened yet)
-    #)
-    save_data(data, 'f1_race_data_2022_2025_clean.csv')
+    #data = collect_single_year(2023, 23)
+    #save_year_data(data, 2023)
     
-    # Combined seasons 2022-2024 
-    # all_data = []
-    # for year in [2022, 2023, 2024]:
-    #     season_data = collect_multiple_races(
-    #         year=year, 
-    #         rounds=list(range(1, 23)),
-    #         clean=True
-    #     )
-    #     if season_data is not None:
-    #         all_data.append(season_data)
-    # 
-    # combined = pd.concat(all_data, ignore_index=True)
-    # save_data(combined, 'f1_race_data_2022_2024_clean.csv')
+    #data = collect_single_year(2024, 24)
+    #save_year_data(data, 2024)
+    
+    data = collect_single_year(2025, 24)
+    save_year_data(data, 2025)
