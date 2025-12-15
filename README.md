@@ -5,11 +5,11 @@ Research Question: Can supervised machine learning models use lap-by-lap Formula
 
 # Overview
 
-### Brief
+### 
 This project explores whether machine learning models can predict when a Formula 1 driver will pit during a race using lap-by-lap race data. Pitstops are rare, high-impact strategic decisions influenced by evolving race conditions such as tire wear, pace changes, weather, and Safety Cars. We frame pitstop prediction as a sequential time-series classification problem and compare a static baseline (Logistic Regression) with sequence models (LSTMs implemented in PyTorch and Keras). We find that sequence-based models substantially outperform the static baseline, and predictive performance varies meaningfully across race contexts: pitstops are most predictable in rainy conditions, for certain teams, on specific tracks, and pit-window prediction is strong (F1 = 0.80 for a 5-lap window). Overall, lap-sequence information is crucial for modeling pit-stop behavior.
 
 # Replication Instruction
-### Detailed instructions of how to replicate the results in your poster
+### Detailed instructions
 1. Environment setup: Install dependencies using pip install -r requirements.txt.
 2. Dataset prep: The cleaned dataset f1_race_data_2021_2025_final.csv is provided and ready to use for training. Simply load and train models directly
    To add additional seasons or future races, modify the year parameter in data.py (e.g., data = collect_single_year(2026, 24) for the 2026 season) and run the script to collect new
@@ -27,7 +27,7 @@ Worst tracks: Hungarian, British, US GP
    and our Pit-Window Evaluation which uses our window function, and Pit Window = next 5 laps. Expected: Precision = 0.86, Recall = 0.75, F1 = 0.80
 
 # Future Directions
-### Brief
+###
 There are several extensions to improve both realism and performance of our model. First, the model could be trained directly on pit-window targets (e.g., PitNextK) instead of applying window logic only during evaluation, allowing it to better align with real strategic decision horizons. Second, alternative sequence models such as GRUs or attention-based architectures may help identify which laps and signals most strongly influence pit decisions while improving interpretability; prior work on lap-level Formula 1 data suggests GRUs can outperform LSTMs due to their simpler gating and improved efficiency on noisy sequential datasets. Finally, incorporating competitor-aware features (such as gaps to nearby cars, recent competitor pit activity, and pit-timing undercut/overcut indicators) would better capture race-wide strategic interactions and move the model closer to real Formula 1 decision-support systems.
 
 
