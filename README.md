@@ -2,6 +2,41 @@
 Research Question: Can supervised ML models trained on historical F1 data predict whether a driver will make a pit stop within the next k laps, and can those predictions be interpreted with feature-importance methods?
 
 
+# Overview (need to add finding) 
+
+## Brief (roughly one paragraph) overview of your project, including its aims and the main findings/outcome (at a high level) 
+This project explores whether machine learning models can predict when a Formula 1 driver will pit during a race using lap-by-lap race data. Pit stops are rare, high-impact strategic decisions influenced by evolving race conditions such as tire wear, pace changes, weather, and Safety Cars. We frame pit-stop prediction as a sequential time-series classification problem and compare a static baseline (Logistic Regression) with sequence models (LSTMs implemented in PyTorch and Keras). 
+
+# Replication Instructions
+## Detailed instructions of how to replicate the results in your poster
+1. Dataset: The cleaned dataset f1_race_data_2021_2025_final.csv is provided and ready to use.
+
+Perfect! Here's Option B as a paragraph:
+
+1. Environment setup: Install dependencies using pip install -r requirements.txt.
+1. Dataset Preperation
+   The cleaned dataset f1_race_data_2021_2025_final.csv is provided and ready to use for training. Simply load and train models directly
+
+   To add additional seasons or future races, modify the year parameter in data.py (e.g., data = collect_single_year(2026, 24) for the 2026 season) and run the script to collect new data. After collecting all desired years, run merge_all_years.py to combine all year files into a refreshed dataset (e.g., f1_race_data_2021_2026_final.csv). This allows extension of the dataset as new F1 seasons become available.
+3. 
+
+
+# Future Directions
+## Brief (roughly one paragraph) overview of next steps/ways to improve on/concrete extensions of your project
+There are several extensions to improve both realism and performance of our model. First, the model could be trained directly on pit-window targets (e.g., PitNextK) instead of applying window logic only during evaluation, allowing it to better align with real strategic decision horizons. Second, alternative sequence models such as GRUs or attention-based architectures may help identify which laps and signals most strongly influence pit decisions while improving interpretability; prior work on lap-level Formula 1 data suggests GRUs can outperform LSTMs due to their simpler gating and improved efficiency on noisy sequential datasets. Finally, incorporating competitor-aware features (such as gaps to nearby cars, recent competitor pit activity, and pit-timing undercut/overcut indicators) would better capture race-wide strategic interactions and move the model closer to real Formula 1 decision-support systems.
+
+
+# Contributions
+Sylvia Guo and Cathy Chen collaborated closely and split the work evenly throughout this project. 
+
+They brainstormed the project topic and research direction together, spending approximately 8 hours researching the prior work, refining the problem scope, selecting appropriate models, deciding relevant features, and determining evaluation metrics. This included framing pit-stop prediction as a sequential learning problem and identifying suitable performance measures for rare events.
+
+Cathy focused on data collection and preprocessing, implementing the FastF1 API pipeline to gather, clean, and merge over 120,000 laps of race data across multiple seasons. She also addressed technical challenges related to multi-year data extraction. This stage took approximately 8 hours.
+
+Sylvia focused on baseline model development, training the Logistic Regression model, and setting up evaluation using ROC–AUC and PR–AUC. This stage took over (). 
+
+Both team members contributed extensively to training and refining the sequence models, for example adjusting training epochs and implementing LSTM models using Keras. It took them around () hours. They also worked together on model evaluation across race characteristics (weather, team, track) and on pit-window prediction, which took approximately 4 hours.
+
 
 ## Summary of `data.py`
 
