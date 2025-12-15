@@ -1,0 +1,12 @@
+# a list of dependencies for replication 
+
+numpy
+pandas
+matplotlib
+scikit-learn
+torch
+tensorflow
+keras
+fastf1
+jupyter
+ipykernel
