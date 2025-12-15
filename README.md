@@ -4,7 +4,7 @@ Research Question: Can supervised machine learning models use lap-by-lap Formula
 # Overview (need to add finding) 
 
 ### Brief (roughly one paragraph) overview of your project, including its aims and the main findings/outcome (at a high level) 
-This project explores whether machine learning models can predict when a Formula 1 driver will pit during a race using lap-by-lap race data. Pit stops are rare, high-impact strategic decisions influenced by evolving race conditions such as tire wear, pace changes, weather, and Safety Cars. We frame pit-stop prediction as a sequential time-series classification problem and compare a static baseline (Logistic Regression) with sequence models (LSTMs implemented in PyTorch and Keras). We find that sequence-based models substantially outperform the static baseline, and predictive performance varies meaningfully across race contexts—pit stops are most predictable in rainy conditions, for certain teams, and on specific tracks.
+This project explores whether machine learning models can predict when a Formula 1 driver will pit during a race using lap-by-lap race data. Pitstops are rare, high-impact strategic decisions influenced by evolving race conditions such as tire wear, pace changes, weather, and Safety Cars. We frame pitstop prediction as a sequential time-series classification problem and compare a static baseline (Logistic Regression) with sequence models (LSTMs implemented in PyTorch and Keras). We find that sequence-based models substantially outperform the static baseline, and predictive performance varies meaningfully across race contexts: pitstops are most predictable in rainy conditions, for certain teams, and on specific tracks.
 
 # Replication Instruction
 ### Detailed instructions of how to replicate the results in your poster
@@ -23,7 +23,7 @@ There are several extensions to improve both realism and performance of our mode
 # Contributions
 Sylvia Guo and Cathy Chen collaborated closely and split the work evenly throughout this project. 
 
-They brainstormed the project topic and research direction together, spending approximately 8 hours researching the prior work, refining the problem scope, selecting appropriate models, deciding relevant features, and determining evaluation metrics. This included framing pit-stop prediction as a sequential learning problem and identifying suitable performance measures for rare events.
+They brainstormed the project topic and research direction together, spending approximately 8 hours researching the prior work, refining the problem scope, selecting appropriate models, deciding relevant features, and determining evaluation metrics. This included framing pitstop prediction as a sequential learning problem and identifying suitable performance measures for rare events.
 
 Cathy focused on data collection and preprocessing, implementing the FastF1 API pipeline to gather, clean, and merge over 120,000 laps of race data across multiple seasons. She also addressed technical challenges related to multi-year data extraction. This stage took approximately 8 hours.
 
